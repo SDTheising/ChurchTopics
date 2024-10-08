@@ -3,6 +3,11 @@
 
  Libraries:
  Youtube-Transcript-API
+ 
  **pip install youtube-transcript-api**
+
+ 
  Selenium 
+
+ 
  **pip install selenium**
