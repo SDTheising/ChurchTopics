@@ -11,3 +11,9 @@
 
  
  **pip install selenium**
+
+ Dotenv
+
+ **pip install dotenv**
+
+ Updated 01/23/25
