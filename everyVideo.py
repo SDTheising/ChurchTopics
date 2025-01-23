@@ -1,16 +1,18 @@
 import time
 import csv
+import os
 from selenium import webdriver
 from selenium.webdriver.edge.service import Service
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
+from dotenv import load_dotenv
 
 class EveryVideo:
     @staticmethod
     def GetIds(channel_url):
         # Set up Edge WebDriver
-        edge_driver_path = r'C:\edgedriver_win32'  # Update this path
+        edge_driver_path = os.getenv('EDGE_DRIVER_PATH')
         service = Service(executable_path=edge_driver_path)
         driver = webdriver.Edge(service=service)
 
@@ -52,7 +54,7 @@ class EveryVideo:
         # Write the first 100 unique video IDs to a CSV file
         with open('ID_HoldingCell.csv', mode='w', newline='', encoding='utf-8') as file:
             writer = csv.writer(file)
-            for video_id in list(video_ids)[:100]:  # Ensure only the first 100 are written
+            for video_id in list(video_ids)[:1]:  # Ensure only the first 100 are written
                 writer.writerow([video_id])  # Write each unique video ID on a new line
 
         # Confirm completion
