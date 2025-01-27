@@ -34,7 +34,7 @@ with open(output_file, mode='w', newline='', encoding='utf-8') as csvfile:
         driver.get(url)
 
         # Wait for the page to fully load
-        time.sleep(5)
+        time.sleep(1)
 
         # Check if the page displays the "No results" message
         try:
