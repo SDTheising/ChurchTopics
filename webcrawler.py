@@ -68,50 +68,33 @@ def crawl_sitemap(sitemap_url):
         print(f"Error fetching sitemap: {e}")
         return []
 
-# Recursive crawling function
-def recursive_crawl(base_url, disallowed_paths, driver, visited=None, depth=3):
-    if visited is None:
-        visited = set()
-
-    # Stop crawling if maximum depth is reached
-    if depth == 0:
-        return {}
-
+# Function to find YouTube links on a webpage
+def find_youtube_links(urls, disallowed_paths, driver_path):
+    service = Service(driver_path)
+    driver = webdriver.Edge(service=service)
     youtube_links = {}
+
     try:
-        # Skip URLs that are disallowed or already visited
-        if any(base_url.startswith(d) for d in disallowed_paths):
-            print(f"Skipping disallowed path: {base_url}")
-            return youtube_links
-        if base_url in visited:
-            return youtube_links
+        for url in urls:
+            # Skip URLs that match disallowed paths
+            if any(url.startswith(d) for d in disallowed_paths):
+                print(f"Skipping disallowed path: {url}")
+                continue
 
-        print(f"Visiting: {base_url}")
-        visited.add(base_url)
+            try:
+                print(f"Visiting: {url}")
+                driver.get(url)
+                time.sleep(3)  # Allow the page to load
 
-        # Visit the URL
-        driver.get(base_url)
-        time.sleep(3)  # Allow the page to load
+                # Find all <a> tags and extract href attributes
+                links = driver.find_elements(By.TAG_NAME, 'a')
+                youtube_links[url] = [link.get_attribute('href') for link in links 
+                                      if link.get_attribute('href') and 'youtube.com' in link.get_attribute('href')]
+            except Exception as e:
+                print(f"Error processing {url}: {e}")
+    finally:
+        driver.quit()
 
-        # Extract YouTube links on the page
-        links = driver.find_elements(By.TAG_NAME, 'a')
-        youtube_links[base_url] = [link.get_attribute('href') for link in links
-                                   if link.get_attribute('href') and 'youtube.com' in link.get_attribute('href')]
-
-        # Extract all unique internal links
-        internal_links = set()
-        for link in links:
-            href = link.get_attribute('href')
-            if href and href.startswith(base_url):  # Only follow internal links
-                internal_links.add(href)
-
-        # Recursively crawl internal links
-        for link in internal_links:
-            youtube_links.update(recursive_crawl(link, disallowed_paths, driver, visited, depth - 1))
-    
-    except Exception as e:
-        print(f"Error processing {base_url}: {e}")
-    
     return youtube_links
 
 # Main function
@@ -121,38 +104,33 @@ def main():
     edge_driver_path = os.getenv('EDGE_DRIVER_PATH')  # Path to msedgedriver executable
     service = Service(executable_path=edge_driver_path)
     driver = webdriver.Edge(service=service)
-
     # Get the list of base URLs
     base_urls = get_urls_from_csv(csv_path)
 
     all_youtube_links = {}
 
-    try:
-        for base_url in base_urls:
-            # Parse robots.txt
-            disallowed_paths, sitemap_urls = parse_robots_txt(base_url)
+    for base_url in base_urls:
+        # Parse robots.txt
+        disallowed_paths, sitemap_urls = parse_robots_txt(base_url)
 
-            # Check common sitemap locations if none found in robots.txt
-            if not sitemap_urls:
-                sitemap_url = find_common_sitemaps(base_url)
-                if sitemap_url:
-                    sitemap_urls.append(sitemap_url)
+        # Check common sitemap locations if none found in robots.txt
+        if not sitemap_urls:
+            sitemap_url = find_common_sitemaps(base_url)
+            if sitemap_url:
+                sitemap_urls.append(sitemap_url)
 
-            # Crawl sitemap URLs or recursively crawl homepage if no sitemap
-            urls_to_crawl = []
-            if sitemap_urls:
-                for sitemap_url in sitemap_urls:
-                    urls_to_crawl.extend(crawl_sitemap(sitemap_url))
-            else:
-                print(f"No sitemap available for {base_url}, falling back to homepage.")
-                urls_to_crawl.append(base_url)
+        # Crawl sitemap URLs or fallback to homepage
+        urls_to_crawl = []
+        if sitemap_urls:
+            for sitemap_url in sitemap_urls:
+                urls_to_crawl.extend(crawl_sitemap(sitemap_url))
+        else:
+            print(f"No sitemap available for {base_url}, falling back to homepage.")
+            urls_to_crawl.append(base_url)
 
-            # Perform recursive crawling
-            for url in urls_to_crawl:
-                youtube_links = recursive_crawl(url, disallowed_paths, driver, depth=3)
-                all_youtube_links.update(youtube_links)
-    finally:
-        driver.quit()
+        # Find YouTube links
+        youtube_links = find_youtube_links(urls_to_crawl, disallowed_paths, edge_driver_path)
+        all_youtube_links.update(youtube_links)
 
     # Save the results to a CSV
     output_df = pd.DataFrame([

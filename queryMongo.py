@@ -12,115 +12,124 @@ def connect_to_db():
     db = client["Sermons"]  # Replace with your database name
     return db["Churches"]  # Replace with your collection name
 
-# Function to query by language, denomination, or size range
 def query_churches(collection, language=None, denomination=None, range_value=None):
-    query = {}
+    pipeline = []
 
-    # Add language filter if provided
+    # Stage 1: Match on language and denomination if they're provided
+    match_stage = {}
     if language:
-        query["Language"] = {"$regex": language, "$options": "i"}
-
-    # Add denomination filter if provided
+        match_stage["Language"] = {"$regex": language, "$options": "i"}
     if denomination:
-        query["Denomination"] = {"$regex": denomination, "$options": "i"}
+        match_stage["Denomination"] = {"$regex": denomination, "$options": "i"}
 
-    # Add range filter if provided
+    # Only add a $match if there's something to match on
+    if match_stage:
+        pipeline.append({"$match": match_stage})
+
+    # Stage 2: If range_value is provided, add all the "size" parsing steps
     if range_value is not None:
         try:
-            range_value = int(range_value)
-            # Use MongoDB aggregation to parse size ranges and filter
-            pipeline = [
-                # Step 1: Clean up the 'Size' field by removing spaces and commas
-                {
-                    "$addFields": {
-                        "clean_size": {
-                            "$replaceAll": {
-                                "input": {"$replaceAll": {"input": "$Size", "find": ",", "replacement": ""}},
-                                "find": " ",
-                                "replacement": ""
-                            }
-                        }
-                    }
-                },
-                # Step 2: Add a debug projection stage to inspect intermediate values
-                {
-                        "$project": {
-                            "_id": 1,
-                            "Size": 1,  # Original Size field
-                            "ChurchName": 1,
-                            "Language": 1,
-                            "Denomination": 1,
-                            "Website": 1,
-                            "clean_size": 1,  # Cleaned version of Size
-                            "split_size": {"$split": ["$clean_size", "-"]},  # Split the cleaned size into min and max
-                        }
-                },
-                # Step 3: Filter documents with invalid split results
-                {
-                    "$match": {
-                        "$expr": {
-                            "$eq": [{"$size": "$split_size"}, 2]
-                        }
-                    }
-                },
-                # Step 4: Add fields for min_size and max_size, with error handling
-                {
-                    "$addFields": {
-                        "min_size": {
-                            "$convert": {
-                                "input": {"$arrayElemAt": ["$split_size", 0]},
-                                "to": "int",
-                                "onError": None
-                            }
-                        },
-                        "max_size": {
-                            "$convert": {
-                                "input": {"$arrayElemAt": ["$split_size", 1]},
-                                "to": "int",
-                                "onError": None
-                            }
-                        }
-                    }
-                },
-                # Step 5: Filter out documents where min_size or max_size is null
-                {
-                    "$match": {
-                        "$and": [
-                            {"min_size": {"$ne": None}},
-                            {"max_size": {"$ne": None}}
-                        ]
-                    }
-                },
-                # Step 6: Final range filtering
-                {
-                    "$match": {
-                        "$expr": {
-                            "$and": [
-                                {"$lte": ["$min_size", range_value]},
-                                {"$gte": ["$max_size", range_value]}
-                            ]
-                        }
-                    }
-                },
-                # Step 7: Include only required fields in the final output
-                {
-                    "$project": {
-                        "ChurchName": 1,
-                        "Language": 1,
-                        "Denomination": 1,
-                        "Size": 1,
-                        "Website": 1  # Ensure all potential fields from 'field_map' are included
-                    }
-                }
-            ]
-            results = collection.aggregate(pipeline)
-            return [doc for doc in results]
+            range_int = int(range_value)
         except ValueError:
             raise ValueError("Range value must be an integer.")
 
-    # Execute the query for language/denomination only
-    results = collection.find(query)
-    return [doc for doc in results]
+        pipeline.extend([
+            # Clean up the 'Size' field
+            {
+                "$addFields": {
+                    "clean_size": {
+                        "$replaceAll": {
+                            "input": {"$replaceAll": {"input": "$Size", "find": ",", "replacement": ""}},
+                            "find": " ",
+                            "replacement": ""
+                        }
+                    }
+                }
+            },
+            # Project intermediate steps for debug or clarity
+            {
+                "$project": {
+                    "_id": 1,
+                    "ChurchName": 1,
+                    "Language": 1,
+                    "Denomination": 1,
+                    "Website": 1,
+                    "Size": 1,
+                    "clean_size": 1,
+                    "split_size": {"$split": ["$clean_size", "-"]}
+                }
+            },
+            # Keep docs that have exactly two elements in split_size
+            {
+                "$match": {
+                    "$expr": {"$eq": [{"$size": "$split_size"}, 2]}
+                }
+            },
+            # Convert the parts into min_size, max_size (integers)
+            {
+                "$addFields": {
+                    "min_size": {
+                        "$convert": {
+                            "input": {"$arrayElemAt": ["$split_size", 0]},
+                            "to": "int",
+                            "onError": None
+                        }
+                    },
+                    "max_size": {
+                        "$convert": {
+                            "input": {"$arrayElemAt": ["$split_size", 1]},
+                            "to": "int",
+                            "onError": None
+                        }
+                    }
+                }
+            },
+            # Filter out where conversion failed
+            {
+                "$match": {
+                    "$and": [
+                        {"min_size": {"$ne": None}},
+                        {"max_size": {"$ne": None}}
+                    ]
+                }
+            },
+            # Keep only those where min <= range_int <= max
+            {
+                "$match": {
+                    "$expr": {
+                        "$and": [
+                            {"$lte": ["$min_size", range_int]},
+                            {"$gte": ["$max_size", range_int]}
+                        ]
+                    }
+                }
+            },
+            # Final project
+            {
+                "$project": {
+                    "_id": 1,
+                    "ChurchName": 1,
+                    "Language": 1,
+                    "Denomination": 1,
+                    "Size": 1,
+                    "Website": 1
+                }
+            }
+        ])
+
+    # Finally, run the pipeline if range is provided, or do a simpler find if not
+    if range_value is not None:
+        results = collection.aggregate(pipeline)
+    else:
+
+        if pipeline:
+            results = collection.aggregate(pipeline)
+        else:
+            # If no language/denomination or range is provided, there's no pipeline, so just return everything
+            results = collection.find()
+
+    return list(results)
+
 
 # Main function
 def main():
