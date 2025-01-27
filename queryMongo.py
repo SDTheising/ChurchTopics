@@ -30,12 +30,68 @@ def query_churches(collection, language=None, denomination=None, range_value=Non
             range_value = int(range_value)
             # Use MongoDB aggregation to parse size ranges and filter
             pipeline = [
+                # Step 1: Clean up the 'Size' field by removing spaces and commas
                 {
                     "$addFields": {
-                        "min_size": {"$toInt": {"$arrayElemAt": [{"$split": ["$Size", "-"]}, 0]}},
-                        "max_size": {"$toInt": {"$arrayElemAt": [{"$split": ["$Size", "-"]}, 1]}}
+                        "clean_size": {
+                            "$replaceAll": {
+                                "input": {"$replaceAll": {"input": "$Size", "find": ",", "replacement": ""}},
+                                "find": " ",
+                                "replacement": ""
+                            }
+                        }
                     }
                 },
+                # Step 2: Add a debug projection stage to inspect intermediate values
+                {
+                        "$project": {
+                            "_id": 1,
+                            "Size": 1,  # Original Size field
+                            "ChurchName": 1,
+                            "Language": 1,
+                            "Denomination": 1,
+                            "Website": 1,
+                            "clean_size": 1,  # Cleaned version of Size
+                            "split_size": {"$split": ["$clean_size", "-"]},  # Split the cleaned size into min and max
+                        }
+                },
+                # Step 3: Filter documents with invalid split results
+                {
+                    "$match": {
+                        "$expr": {
+                            "$eq": [{"$size": "$split_size"}, 2]
+                        }
+                    }
+                },
+                # Step 4: Add fields for min_size and max_size, with error handling
+                {
+                    "$addFields": {
+                        "min_size": {
+                            "$convert": {
+                                "input": {"$arrayElemAt": ["$split_size", 0]},
+                                "to": "int",
+                                "onError": None
+                            }
+                        },
+                        "max_size": {
+                            "$convert": {
+                                "input": {"$arrayElemAt": ["$split_size", 1]},
+                                "to": "int",
+                                "onError": None
+                            }
+                        }
+                    }
+                },
+                # Step 5: Filter out documents where min_size or max_size is null
+                {
+                    "$match": {
+                        "$and": [
+                            {"min_size": {"$ne": None}},
+                            {"max_size": {"$ne": None}}
+                        ]
+                    }
+                },
+                # Step 6: Final range filtering
                 {
                     "$match": {
                         "$expr": {
@@ -44,6 +100,16 @@ def query_churches(collection, language=None, denomination=None, range_value=Non
                                 {"$gte": ["$max_size", range_value]}
                             ]
                         }
+                    }
+                },
+                # Step 7: Include only required fields in the final output
+                {
+                    "$project": {
+                        "ChurchName": 1,
+                        "Language": 1,
+                        "Denomination": 1,
+                        "Size": 1,
+                        "Website": 1  # Ensure all potential fields from 'field_map' are included
                     }
                 }
             ]
@@ -86,8 +152,9 @@ def main():
     parser.add_argument(
         "--returns",
         type=str,
-        default="ChurchName",
-        help=f"Define what sections to return. Valid options are: {', '.join(field_map.keys())}"
+        nargs="+",
+        default="name",
+        help=f"Define what sections to return. Valid options are: {', '.join(field_map.keys())}. Note, can have multiple in the format \"--returns <arg> <arg>\""
     )
     
     args = parser.parse_args()
@@ -105,7 +172,16 @@ def main():
             denomination=args.denomination,
             range_value=args.size
         )
-        returns = field_map.get(args.returns, None)
+        # Handle the case where `args.returns` is a list of fields
+        returns = [field_map.get(field, None) for field in args.returns]
+
+        # Check for invalid fields
+        if None in returns:
+            invalid_fields = [field for field, mapped in zip(args.returns, returns) if mapped is None]
+            print(f"Error: Invalid fields in --returns: {', '.join(invalid_fields)}")
+            print(f"Valid options are: {', '.join(field_map.keys())}")
+            return
+
         if returns is None:
             print(f"Error: Invalid --returns value '{args.returns}'. Valid options are: {', '.join(field_map.keys())}")
             return
@@ -113,7 +189,7 @@ def main():
         if churches:
             print("Matching churches:")
             for church in churches:
-                print(church.get(returns))
+                print({field: church.get(field_map.get(field, "Field not found")) for field in args.returns})
         else:
             print("No matching churches found.")
     except ValueError as e:
