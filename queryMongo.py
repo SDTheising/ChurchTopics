@@ -152,8 +152,8 @@ def main():
     parser.add_argument(
         "--returns",
         type=str,
+        default=["name"],
         nargs="+",
-        default="name",
         help=f"Define what sections to return. Valid options are: {', '.join(field_map.keys())}. Note, can have multiple in the format \"--returns <arg> <arg>\""
     )
     

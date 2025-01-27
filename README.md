@@ -16,4 +16,8 @@ ChurchTopics is a project that uses machine learning to analyze and classify chu
 
  **pip install dotenv**
 
- Updated 01/23/25
+ Pymongo
+
+ **pip install pymongo**
+
+ Updated 01/27/25
