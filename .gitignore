@@ -1,6 +1,7 @@
 *.csv
 *.env
 *.log
+*.json
 createVenv.py
 *.txt
 /venv/*

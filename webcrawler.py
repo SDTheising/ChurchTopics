@@ -18,10 +18,10 @@ from selenium.webdriver.support import expected_conditions as EC
 
 
 # ─────────────────────────  CONFIG  ───────────────────────── #
-CSV_PATH       = "churchesWithWebsites.csv"              # ← your CSV
-EDGE_DRIVER    = os.getenv("EDGE_DRIVER_PATH")           # env var → exe
-HEADLESS       = True                                    # flip for debug
-REQUEST_DELAY  = 1.0                                     # seconds between domains
+CSV_PATH       = "detailed_churches.csv"              
+EDGE_DRIVER    = os.getenv("EDGE_DRIVER_PATH")          
+HEADLESS       = True                                    
+REQUEST_DELAY  = 1.0                                    
 # ──────────────────────────────────────────────────────────── #
 
 
